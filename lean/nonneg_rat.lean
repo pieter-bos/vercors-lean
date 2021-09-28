@@ -1,25 +1,16 @@
 import algebra
 import tactic.linarith
 
-set_option trace.simplify.rewrite true
-set_option trace.simp_lemmas true
-set_option trace.linarith true
-
-lemma x {β : Type} (p : β → Prop) {α : subtype p} (b₁ b₂ : β) (ok₁ : p b₁) (ok₂ : p b₂) :
-  (subtype.mk b₁ ok₁).val = b₁ 
-  :=
-  begin
-    exact rfl
-  end
-
-lemma y (q : ℚ) : 0 * q = q := begin library_search end
+-- set_option trace.simplify.rewrite true
+-- set_option trace.simp_lemmas true
+-- set_option trace.linarith true
 
 def nonneg_rat : Type :=
   {q : ℚ // q.nonneg}
 
 notation `ℚ*` := nonneg_rat
 
--- ℚ* is a semi-ring of which multiplication is commutative, and has an inverse.
+-- ℚ* is a comm-semi-ring with multiplicative inverse
 -- Equivalent: a field without an additive inverse.
 
 namespace nonneg_rat
@@ -64,13 +55,11 @@ end
 
 instance : has_inv ℚ* := ⟨inv⟩
 
-def inv' (q : ℚ*) : ℚ* := of_rat (q.val⁻¹) begin
-  have h : 0 ≤ q.val.num,
-  exact rat.num_nonneg_iff_zero_le.elim_right 
-    (rat.nonneg_iff_zero_le.elim_left q.property),
-  rw [unpack_rat q.val, rat.inv_def, rat.nonneg_iff_zero_le, rat.num_nonneg_iff_zero_le.symm],
-  sorry,
-end
+def div (q q' : ℚ*) : ℚ* := q * q'⁻¹
+instance : has_div ℚ* := ⟨div⟩
+
+def le (q q' : ℚ*) : Prop := q.val.le q'.val
+instance : has_le ℚ* := ⟨le⟩
 
 @[simp] lemma subtype_val (q : ℚ*) : (⟨q.val, q.property⟩ : ℚ*).val = q.val := begin exact rfl, end
 lemma expand (q : ℚ*) : q = ⟨q.val, q.property⟩ := by exact subtype.eq rfl
@@ -78,6 +67,7 @@ lemma expand (q : ℚ*) : q = ⟨q.val, q.property⟩ := by exact subtype.eq rfl
 @[simp] theorem add_val (q q' : ℚ*) : (q + q').val = q.val + q'.val := by cc
 @[simp] theorem mul_val (q q' : ℚ*) : (q * q').val = q.val * q'.val := by cc
 @[simp] theorem inv_val (q : ℚ*) : (q⁻¹).val = q.val⁻¹ := by cc
+theorem le_val (q q' : ℚ*) : q ≤ q' ↔ q.val ≤ q'.val := by simp
 
 #check add_left_cancel
 
@@ -90,30 +80,80 @@ theorem one_mul (q : ℚ*) : 1 * q = q := by simp; exact rat.one_mul _
 theorem mul_one (q : ℚ*) : q * 1 = q := by simp; exact rat.mul_one _
 theorem left_distrib (a b c : ℚ*) : a * (b + c) = a*b + a*c := by simp; exact rat.mul_add _ _ _
 theorem right_distrib (a b c : ℚ*) : (a + b) * c = a*c + b*c := by simp; exact rat.add_mul _ _ _
-theorem zero_mul [mul_zero_class ℚ] (q : ℚ*) : 0 * q = 0 := begin
-  simp,
-  generalize : ↑q = q',
-  exact zero_mul q',
-end
-theorem mul_zero (q : ℚ*) : q * 0 = 0 := sorry
 
-instance : semiring ℚ* :=
+
+
+theorem zero_mul [mul_zero_class ℚ] (q : ℚ*) : 0 * q = 0 := by sorry
+theorem mul_zero (q : ℚ*) : q * 0 = 0 := by sorry
+
+theorem le_refl (q : ℚ*) : q ≤ q := by rw le_val
+theorem le_trans (a b c : ℚ*) : a ≤ b → b ≤ c → a ≤ c := by simp only [le_val]; exact rat.le_trans
+theorem le_antisymm (a b : ℚ*) : a ≤ b → b ≤ a → a = b := by simp only [le_val, eq_val]; exact rat.le_antisymm
+theorem le_total (a b : ℚ*) : a ≤ b ∨ b ≤ a := by simp only [le_val]; exact rat.le_total _ _
+
+instance decidable_le : decidable_rel ((≤) : ℚ* → ℚ* → Prop)
+| a b := show decidable (a.val ≤ b.val), by apply_instance
+
+instance : comm_semiring ℚ* :=
 {
   zero := 0,
   one := 1,
   add := add,
   mul := mul,
+
   add_assoc := add_assoc,
-  zero_add := zero_add,
-  add_zero := add_zero,
   add_comm := add_comm,
   mul_assoc := mul_assoc,
+  mul_comm := sorry,
+
+  zero_add := zero_add,
+  add_zero := add_zero,
+  
   one_mul := one_mul,
   mul_one := mul_one,
+  
   zero_mul := zero_mul,
   mul_zero := mul_zero,
+  
   left_distrib := left_distrib,
   right_distrib := right_distrib,
+  /-
+  Missing, because it is not a field:
+  - neg
+  - add_left_neg
+  - exists_pair_ne
+  - inv (defined)
+  - mul_inv_cancel (to define)
+  - mul_comm (to define)
+  -/
+}
+
+/- Extra instances to short-circuit type class resolution -/
+-- not a ring, but similar division properties? 
+-- instance : division_ring ℚ*      := by apply_instance
+-- we are nontrivial
+-- instance : nontrivial ℚ*         := by apply_instance
+instance : semiring ℚ*           := by apply_instance
+instance : add_comm_monoid ℚ*    := by apply_instance
+instance : add_monoid ℚ*         := by apply_instance
+-- we should have (a+b) = (a+c) -> b=c
+-- instance : add_left_cancel_semigroup ℚ* := by apply_instance
+-- instance : add_right_cancel_semigroup ℚ* := by apply_instance
+instance : add_comm_semigroup ℚ* := by apply_instance
+instance : add_semigroup ℚ*      := by apply_instance
+instance : comm_monoid ℚ*        := by apply_instance
+instance : monoid ℚ*             := by apply_instance
+instance : comm_semigroup ℚ*     := by apply_instance
+instance : semigroup ℚ*          := by apply_instance
+
+instance : decidable_linear_order ℚ* :=
+{
+  le := le,
+  le_refl := le_refl,
+  le_trans := le_trans,
+  le_antisymm := le_antisymm,
+  le_total := le_total,
+  decidable_le := assume a b, rat.decidable_le a.val b.val,
 }
 
 end nonneg_rat
