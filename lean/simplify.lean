@@ -1,4 +1,5 @@
 import .nonneg_rat
+import .mask
 
 namespace simplify
 
@@ -58,8 +59,8 @@ inductive T
 
 def H := field × O → V
 def S := var → V
-def FieldPermMask := field × O → ℚ*
-def PredPermMask := pred × list V → ℚ*
+def FieldPermMask := mask (field × O)
+def PredPermMask := mask (pred × list V)
 
 structure conf :=
 (h : H)
