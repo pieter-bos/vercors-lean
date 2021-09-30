@@ -57,6 +57,12 @@ inductive T
 | O : T
 | Q : T
 
+def V.typ : V → T
+| (V.b _) := T.B
+| (V.z _) := T.Z
+| (V.o _) := T.O
+| (V.q _) := T.Q
+
 def H := field × O → V
 def S := var → V
 def FieldPermMask := mask (field × O)
@@ -99,6 +105,27 @@ inductive Eval
 | err : X → Eval
 | ok : V → Eval
 
+def Eval.is_x : Eval → Prop
+| Eval.type_err := false
+| (Eval.err _) := true
+| (Eval.ok _) := false
+
+def Eval.is_v : Eval → Prop
+| Eval.type_err := false
+| (Eval.err _) := false
+| (Eval.ok _) := true
+
+def v_of_is_v {e : Eval} (h : e.is_v) : V := begin
+  cases e,
+  case ok { exact e, },
+  repeat { simp [Eval.is_v] at h, apply false.elim, exact h, },
+end
+
+def Eval.is_t : Eval → T → Prop
+| Eval.type_err _ := false
+| (Eval.err _) _ := false
+| (Eval.ok v) t := v.typ = t
+
 structure defs :=
 (var : var → T) 
 (field : field → T)
@@ -121,38 +148,75 @@ def E.typ (d : defs) : E → T
 | (E.fieldPerm o f) := T.Q
 | (E.predPerm p args) := T.Q
 
-def allTyped (d : defs) : list E → list T → Prop
+def all_typed (d : defs) : list E → list T → Prop
 | [] [] := true
 | [] (_ :: _) := false
 | (_ :: _) [] := false
-| (e :: es) (t :: ts) := e.typ d = t ∧ allTyped es ts
+| (e :: es) (t :: ts) := e.typ d = t ∧ all_typed es ts
 
-mutual def allWellTyped, wellTyped (d : defs)
-with allWellTyped : list E → Prop
+mutual def all_wt, wt (d : defs)
+with all_wt : list E → Prop
 | [] := true
-| (e :: es) := (wellTyped e ∧ allWellTyped es)
+| (e :: es) := (wt e ∧ all_wt es)
 
-with wellTyped : E → Prop
+with wt : E → Prop
 | E.null := true
 | (E.const_b b) := true
 | (E.const_n z) := true
 | (E.x x) := true
-| (E.deref o f) := o.typ d = T.O ∧ wellTyped o
-| (E.negate z) := z.typ d = T.Z ∧ wellTyped z
-| (E.add z z') := z.typ d = z'.typ d ∧ (z.typ d = T.Z ∨ z.typ d = T.Q) ∧ wellTyped z ∧ wellTyped z'
-| (E.div z z') := z.typ d = z'.typ d ∧ (z.typ d = T.Z ∨ z.typ d = T.Q) ∧ wellTyped z ∧ wellTyped z'
-| (E.not b) := b.typ d = T.B ∧ wellTyped b
-| (E.eq v v') := v.typ d = v'.typ d ∧ wellTyped v ∧ wellTyped v'
-| (E.apply f args) := allTyped d args (d.func f).fst ∧ allWellTyped args
-| (E.unfolding p args q e) := allTyped d args (d.pred p) ∧ allWellTyped args ∧ wellTyped q ∧ wellTyped e
-| (E.fieldPerm o f) := o.typ d = T.O ∧ wellTyped o
-| (E.predPerm p args) := allTyped d args (d.pred p) ∧ allWellTyped args
+| (E.deref o f) := o.typ d = T.O ∧ wt o
+| (E.negate z) := z.typ d = T.Z ∧ wt z
+| (E.add z z') := z.typ d = z'.typ d ∧ (z.typ d = T.Z ∨ z.typ d = T.Q) ∧ wt z ∧ wt z'
+| (E.div z z') := z.typ d = z'.typ d ∧ (z.typ d = T.Z ∨ z.typ d = T.Q) ∧ wt z ∧ wt z'
+| (E.not b) := b.typ d = T.B ∧ wt b
+| (E.eq v v') := v.typ d = v'.typ d ∧ wt v ∧ wt v'
+| (E.apply f args) := all_typed d args (d.func f).fst ∧ all_wt args
+| (E.unfolding p args q e) := all_typed d args (d.pred p) ∧ all_wt args ∧ wt q ∧ wt e
+| (E.fieldPerm o f) := o.typ d = T.O ∧ wt o
+| (E.predPerm p args) := all_typed d args (d.pred p) ∧ all_wt args
+
+def conf.wt (d : defs) (c : conf) : Prop :=
+  (∀x, (c.s x).typ = d.var x)
+  ∧ (∀f o, (c.h (f, o)).typ = d.field f)
 
 def Eval.map_v (e : Eval) (f : V → Eval) : Eval := match e with
 | Eval.type_err := Eval.type_err
 | Eval.err x := Eval.err x
 | Eval.ok v := f v
 end
+
+#print Eval.rec
+
+lemma map_v_is_x_or_t 
+  : ∀ {t t' : T} {f : V → Eval} (e : Eval),
+    e.is_x ∨ e.is_t t' →
+    (∀ (v : V) (h : e = Eval.ok v), (f v).is_x ∨ (f v).is_t t) → 
+    (e.map_v f).is_x ∨ (e.map_v f).is_t t 
+  := 
+begin
+  intros t t' f e,
+  cases e,
+
+  case type_err {
+    intros e_x_or_t f_all_v,
+    simp [Eval.is_x, Eval.is_v] at e_x_or_t, 
+    apply false.elim, exact e_x_or_t,
+  },
+
+  case err {
+    intros e_x_or_t v,
+    simp [Eval.map_v, Eval.is_x],
+  },
+
+  case ok {
+    intros e_x_or_t v,
+    simp [Eval.map_v],
+    exact v e rfl,
+  },
+end
+
+lemma eval_ok_t {e : Eval} {t : T} {v : V} :
+  (Eval.ok v).is_t t ↔ v.typ = t := by simp [Eval.is_t]
 
 def Eval.cases_v (e : Eval) (f_b : bool → Eval) (f_z : ℤ → Eval) (f_q : ℚ* → Eval) (f_o : Ref → Eval) :=
   e.map_v $ λv, match v with
@@ -162,117 +226,48 @@ def Eval.cases_v (e : Eval) (f_b : bool → Eval) (f_z : ℤ → Eval) (f_q : �
   | V.o o := f_o o
   end
 
-def Eval.as_b (e : Eval) (f : bool → Eval) : Eval :=
-  e.cases_v f (λ_, Eval.type_err) (λ_, Eval.type_err) (λ_, Eval.type_err)
-
-def Eval.as_o (e : Eval) (f : Ref → Eval) : Eval := 
-  e.cases_v (λ_, Eval.type_err) (λ_, Eval.type_err) (λ_, Eval.type_err) f
-
-def Eval.as_numeric (e : Eval) (f_z : ℤ → Eval) (f_q : ℚ* → Eval) : Eval :=
-  e.cases_v (λ_, Eval.type_err) f_z f_q (λ_, Eval.type_err)
-
-def Eval.as_z (e : Eval) (f : ℤ → Eval) : Eval := e.as_numeric f (λ_, Eval.type_err)
-
-inductive values_reduction
-| err : Eval → values_reduction
-| ok : list V → values_reduction
-
-def values_reduction.append (v : values_reduction) (e : Eval) : values_reduction :=
-  match v with
-  | (values_reduction.err e) := values_reduction.err e
-  | (values_reduction.ok vs) := 
-    match e with
-    | Eval.type_err := values_reduction.err Eval.type_err
-    | Eval.err x := values_reduction.err $ Eval.err x
-    | Eval.ok v := values_reduction.ok (vs ++ [v])
-    end
-  end
-
-def values_reduction.of (es : list Eval) : values_reduction :=
-  es.foldl values_reduction.append (values_reduction.ok [])
+def evals_map' : list V → (list V → Eval) → list Eval → Eval
+| acc f [] := f acc
+| acc f (e :: es) := e.map_v $ λv, evals_map' (acc ++ [v]) f es
 
 def evals_map (es : list Eval) (f : list V → Eval) : Eval :=
-  match values_reduction.of es with
-  | values_reduction.err e := e
-  | values_reduction.ok vs := f vs
+  evals_map' [] f es
+
+mutual def eval, evals (d : defs)
+with eval : conf → E → Eval
+| c (E.null) := Eval.ok (V.o Ref.null)
+| c (E.const_b b) := Eval.ok (V.b b)
+| c (E.const_n z) := Eval.ok (V.z z)
+| c (E.x x) := Eval.ok (c.s x)
+| c (E.deref o f) := (eval c o).map_v $ λv, 
+  match v with
+  | (V.o Ref.null) := Eval.err X.null
+  | (V.o (Ref.o o)) := if c.fieldPerm (f, o) = 0 then Eval.err X.perm else Eval.ok $ c.h (f, o)
+  | _ := Eval.type_err
   end
-
-inductive Es
-| e : E → Es
-| es : list E → Es
-
-inductive Evals 
-| e : Eval → Evals
-| es : list Eval → Evals
-
-#print prefix simplify.Evals
-
-def Evals.is_e : Evals → Prop
-| (Evals.e _) := true
-| (Evals.es _) := false
-
-def Evals.cases_e {α : Type} (evs : Evals) (evs_is_e : (∃e, evs = (Evals.e e)) → α) (evs_is_not_e : (∃es, evs = (Evals.es es)) → α) : α := begin
-  evs.cases_on
-
-end
-
-instance (e : Evals) : decidable e.is_e := begin cases e, repeat { simp [Evals.is_e], apply_instance, }, end
-
--- #print prefix simplify.Evals
-
-def Evals.map_e (e : Evals) (f : Eval → Eval) : Eval := match e with
-| (Evals.e e) := f e
-| (Evals.es _) := Eval.type_err
-end
-
-def Evals.map_es (e : Evals) (f : list Eval → Eval) : Eval := match e with
-| (Evals.e _) := Eval.type_err
-| (Evals.es es) := f es
-end
-
-def Evals.map_e' (e : Evals) (f : Eval → Evals) : Evals := match e with
-| (Evals.e e) := f e
-| (Evals.es _) := Evals.e Eval.type_err
-end
-
-def Evals.map_es' (e : Evals) (f : list Eval → Evals) : Evals := match e with
-| (Evals.e _) := Evals.e Eval.type_err
-| (Evals.es es) := f es
-end
-
-
-def Evals.map_v (e : Evals) (f : V → Eval) : Eval := e.map_e $ λe, e.map_v f
-def Evals.cases_v (e : Evals) (f_b : bool → Eval) (f_z : ℤ → Eval) (f_q : ℚ* → Eval) (f_o : Ref → Eval) := e.map_e $ λe, e.cases_v f_b f_z f_q f_o
-def Evals.as_b (e : Evals) (f : bool → Eval) : Eval := e.map_e $ λe, e.as_b f
-def Evals.as_o (e : Evals) (f : Ref → Eval) : Eval := e.map_e $ λe, e.as_o f
-def Evals.as_numeric (e : Evals) (f_z : ℤ → Eval) (f_q : ℚ* → Eval) : Eval := e.map_e $ λe, e.as_numeric f_z f_q
-def Evals.as_z (e : Evals) (f : ℤ → Eval) : Eval := e.map_e $ λe, e.as_z f
-
-def evals (d : defs) : conf → Es → Evals
-| c (Es.e E.null) := Evals.e $ Eval.ok (V.o Ref.null)
-| c (Es.e $ E.const_b b) := Evals.e $ Eval.ok (V.b b)
-| c (Es.e $ E.const_n z) := Evals.e $ Eval.ok (V.z z)
-| c (Es.e $ E.x x) := Evals.e $ Eval.ok (c.s x)
-| c (Es.e $ E.deref o f) := Evals.e $ (evals c (Es.e o)).as_o $ λo, 
-  match o with
-  | Ref.null := Eval.err X.null
-  | Ref.o o := if c.fieldPerm (f, o) = 0 then Eval.err X.perm else Eval.ok $ c.h (f, o)
+| c (E.negate z) := (eval c z).map_v $ λv,
+  match v with
+  | (V.z z) := Eval.ok $ V.z (-z)
+  | _ := Eval.type_err
   end
-| c (Es.e $ E.negate z) := Evals.e $ (evals c (Es.e z)).as_z $ λz, Eval.ok $ V.z (-z)
-| c (Es.e $ E.add z z') := Evals.e $ (evals c (Es.e z)).map_v $ λz, (evals c (Es.e z')).map_v $ λz',
+| c (E.add z z') := (eval c z).map_v $ λz, (eval c z').map_v $ λz',
   match z, z' with
   | (V.z z), (V.z z') := Eval.ok $ V.z (z + z')
   | (V.q q), (V.q q') := Eval.ok $ V.q (q + q')
   | _, _ := Eval.type_err
   end
-| c (Es.e $ E.div z z') := Evals.e $ (evals c (Es.e z)).map_v $ λz, (evals c (Es.e z')).map_v $ λz',
+| c (E.div z z') := (eval c z).map_v $ λz, (eval c z').map_v $ λz',
   match z, z' with
   | (V.z z), (V.z z') := if z' = 0 then Eval.err X.div else Eval.ok $ V.z $ int.div /- or flooring, round to zero? -/ z z'
   | (V.q q), (V.q q') := if q' = 0 then Eval.err X.div else Eval.ok $ V.q (q / q')
   | _, _ := Eval.type_err
   end
-| c (Es.e $ E.not b) := Evals.e $ (evals c (Es.e b)).as_b $ λb, Eval.ok $ V.b ¬b
-| c (Es.e $ E.eq v v') := Evals.e $ (evals c (Es.e v)).map_v $ λv, (evals c (Es.e v')).map_v $ λv',
+| c (E.not b) := (eval c b).map_v $ λv,
+  match v with
+  | (V.b b) := Eval.ok $ V.b ¬b
+  | _ := Eval.type_err
+  end
+| c (E.eq v v') := (eval c v).map_v $ λv, (eval c v').map_v $ λv',
   match v, v' with
   | (V.b b), (V.b b') := Eval.ok $ V.b $ if b = b' then tt else ff
   | (V.z z), (V.z z') := Eval.ok $ V.b $ if z = z' then tt else ff
@@ -280,53 +275,200 @@ def evals (d : defs) : conf → Es → Evals
   | (V.o o), (V.o o') := Eval.ok $ V.b $ if o = o' then tt else ff
   | _, _ := Eval.type_err
   end
-| c (Es.e $ E.apply f args) := Evals.e $ (evals c $ Es.es args).map_es $ λes, evals_map es $
-    λargs, ((d.func f).snd.snd args)
-| c (Es.e $ E.unfolding p args q e) := Evals.e $ (evals c $ Es.es args).map_es $ λes, evals_map es $ 
+| c (E.apply f args) := evals_map (evals c args) $ λargs, ((d.func f).snd.snd args)
+| c (E.unfolding p args q e) := evals_map (evals c args) $
     λargs, if c.predPerm (p, args) < 1
       then Eval.err X.perm
-      else (evals c (Es.e e)).map_v $ λbody, Eval.ok (V.b ff)
-| c (Es.e $ E.fieldPerm o f) := Evals.e $ (evals c (Es.e o)).as_o $ λo,
+      else (eval c e).map_v $ λbody, Eval.ok (V.b ff)
+| c (E.fieldPerm o f) := (eval c o).map_v $ λo,
   match o with
-  | Ref.null := Eval.err X.null
-  | (Ref.o o) := Eval.ok $ V.q $ c.fieldPerm (f, o)
+  | (V.o Ref.null) := Eval.err X.null
+  | (V.o (Ref.o o)) := Eval.ok $ V.q $ c.fieldPerm (f, o)
+  | _ := Eval.type_err
   end
-| c (Es.e $ E.predPerm p args) := Evals.e $ (evals c $ Es.es args).map_es $ λes, evals_map es $
-    λargs, Eval.ok $ V.q $ c.predPerm (p, args)
-| c (Es.es []) := Evals.es []
-| c (Es.es (e :: es)) := (evals c $ Es.e e).map_e' $ λev, (evals c $ Es.es es).map_es' $ λevs, Evals.es (ev :: evs)
+| c (E.predPerm p args) := evals_map (evals c args)$ λargs, 
+    Eval.ok $ V.q $ c.predPerm (p, args)
 
-lemma eval_one (d : defs) (c : conf) (e : E) : (evals d c (Es.e e)).is_e := begin
-  generalize rw_evs : evals d c (Es.e e) = evs,
-  cases evs,
-  simp [Evals.is_e],
-  cases e,
-  repeat { simp [evals] at rw_evs, apply false.elim, exact rw_evs, },
+with evals : conf → list E → list Eval
+| c [] := []
+| c (e :: es) := (eval c e) :: (evals c es)
+
+#print decidable.rec
+
+lemma x {α : Type} (c : Prop) [decidable c] (a a' : α) : (ite c a a') = (ite (¬c) a' a) := begin
+  exact (ite_not c a' a).symm
+end 
+
+lemma ite_prop {α : Type} {prop : α → Prop} {c : Prop} [h : decidable c] {a a' : α} :
+  (c → prop a) ∧ (¬c → prop a') ↔ prop (ite c a a') := begin
+  apply iff.intro,
+  intro props,
+  rw ite,
+  apply h.rec_on,
+
+  intro not_c,
+  simp [(is_false not_c).rec_on], exact props.elim_right not_c,
+  intro c,
+  simp [(is_true c).rec_on], exact props.elim_left c,
+
+  rw ite,
+  apply h.rec_on,
+  intro not_c,
+  simp [(is_false not_c).rec_on],
+  intro prop_a', finish,
+  intro c,
+  simp [(is_true c).rec_on],
+  intro prop_a, finish,
 end
 
-def eval (d : defs) (c : conf) (e : E) : Eval := begin
-  have h : (evals d c (Es.e e)).is_e, exact eval_one d c e,
+theorem wt_sufficient {c : conf} {d : defs} {e : E} (h : wt d e) (ch : c.wt d)
+  : (eval d c e).is_x ∨ (eval d c e).is_t (e.typ d) := 
+begin
+  rw conf.wt at ch,
+  have var_ok : ∀x, (c.s x).typ = d.var x, exact and.elim_left ch,
+  have field_ok : ∀f o, (c.h (f,o)).typ = d.field f, exact and.elim_right ch,
+  clear ch,
 
-  generalize rw_es : (evals d c (Es.e e)) = es, rw rw_es at *,
-  cases es,
-  case e : e { exact e, },
-  case es {
-    simp [Evals.is_e] at h,
-    apply false.elim, exact h,
-  }
+  induction e,
+  repeat { simp only [eval, wt, Eval.is_t, E.typ, V.typ, Eval.is_x, Eval.is_t, false_or, rfl] at *, },
+
+  case x : x { exact var_ok x, },
+
+  case deref : o f ih {
+    apply map_v_is_x_or_t,
+    exact ih (and.elim_right h),
+    intros v v_ok,
+    rw v_ok at *,
+    cases v,
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_left] at *, exact ih h, },
+    cases v,
+    simp [eval],
+    by_cases c.fieldPerm (f, v) = 0,
+    simp [h, Eval.is_x, Eval.is_t],
+    rw ←ite_not,
+    simp at h,
+    simp [h, Eval.is_x, Eval.is_t, field_ok f v],
+    simp [eval, Eval.is_t, Eval.is_x],
+  },
+
+  case negate : z ih {
+    apply map_v_is_x_or_t,
+    exact ih h.elim_right,
+    intros v v_ok,
+    rw v_ok at *,
+    cases v,
+    repeat { simp [eval] at *, },
+
+    repeat { simp [eval, Eval.is_x, Eval.is_t, h.elim_left, V.typ] at *, },
+    repeat {  exact ih h, },
+  },
+
+  case add : z z' ih ih' {
+    apply map_v_is_x_or_t,
+    exact ih h.elim_right.elim_right.elim_left,
+    intros v v_ok,
+    rw v_ok at *,
+    apply map_v_is_x_or_t,
+    exact ih' h.elim_right.elim_right.elim_right,
+    intros v' v_ok',
+    rw v_ok' at *,
+    by_cases is_t_z : (z.typ d) = T.Z,
+
+    cases v,
+    repeat { simp [is_t_z] at *, },
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ] at ih, apply false.elim, exact ih h.elim_right.elim_left, },
+    cases v',
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right, },
+
+    simp [eval, Eval.is_t, Eval.is_x, V.typ],
+
+    cases v,
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left] at ih, apply false.elim, exact ih h.elim_right.elim_right.elim_left, },
+    cases v',
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right.elim_right, },
+    
+    simp [eval, Eval.is_t, Eval.is_x, V.typ, h.elim_right.elim_left],
+  },
+
+  case div : z z' ih ih' {
+    apply map_v_is_x_or_t,
+    exact ih h.elim_right.elim_right.elim_left,
+    intros v v_ok,
+    rw v_ok at *,
+    apply map_v_is_x_or_t,
+    exact ih' h.elim_right.elim_right.elim_right,
+    intros v' v_ok',
+    rw v_ok' at *,
+    by_cases is_t_z : (z.typ d) = T.Z,
+
+    cases v,
+    repeat { simp [is_t_z] at *, },
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ] at ih, apply false.elim, exact ih h.elim_right.elim_left, },
+    cases v',
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right, },
+
+    rw eval,
+    by_cases div_zero : v' = 0,
+    simp [div_zero, Eval.is_x],
+    rw ←ite_not,
+    simp [div_zero, Eval.is_t, V.typ],
+
+    cases v,
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left] at ih, apply false.elim, exact ih h.elim_right.elim_right.elim_left, },
+    cases v',
+    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left, h.elim_right.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right.elim_right, },
+
+    rw eval,
+    by_cases div_zero : v' = 0,
+    simp [div_zero, Eval.is_x],
+    rw ←ite_not,
+    simp [div_zero, Eval.is_t, V.typ, h.elim_right.elim_left],
+  },
+
+  case not : b ih {
+    apply map_v_is_x_or_t,
+    exact ih h.elim_right,
+    intros v v_ok,
+    rw v_ok at *,
+    cases v,
+    repeat { simp only [eval, Eval.is_x, Eval.is_t, V.typ, false_or], },
+    repeat { simp only [h.elim_left, Eval.is_x, Eval.is_t, V.typ, false_or] at ih, },
+    repeat { exact ih h.elim_right },
+  },
+
+  case eq : l r ih ih' {
+    have t_eq : l.typ d = r.typ d, from h.elim_left,
+    have wt_l : wt d l, from h.elim_right.elim_left,
+    have wt_r : wt d r, from h.elim_right.elim_right,
+    clear h,
+
+    apply map_v_is_x_or_t,
+    exact ih wt_l,
+    intros v v_ok,
+    apply map_v_is_x_or_t,
+    exact ih' wt_r,
+    intros v' v_ok',
+    rw v_ok at *, rw v_ok' at *,
+    
+    cases v,
+    repeat {
+      cases v',
+      repeat {
+        simp only [eval],
+        simp only [Eval.is_t, V.typ], 
+        apply or.intro_right, 
+        refl,
+      },
+      repeat {
+        simp only [eval], simp only [Eval.is_t, Eval.is_x, V.typ, or_false],
+        simp only [Eval.is_x, Eval.is_t, V.typ, false_or] at ih,
+        simp only [Eval.is_x, Eval.is_t, V.typ, false_or, ←t_eq, ←ih wt_l] at ih',
+        exact ih' wt_r,
+      },
+    },
+  },
+
+  repeat { sorry, },
 end
-
-def eval' (d : defs) (c : conf) (e : E) : Eval := 
-  let evs := evals d c (Es.e e) in
-    if evs.is_e 
-    then match evs with
-    | (Evals.e e) := e
-    | (Evals.es es) := begin  end
-    end
-    else Eval.type_err
-
--- lemma wellTyped_sufficient {e : E} {d : defs} (wt : wellTyped d e) : ∀c : conf, eval d c e ≠ Eval.type_err := begin
-
--- end
 
 end simplify
