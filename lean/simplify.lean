@@ -233,6 +233,39 @@ def evals_map' : list V → (list V → Eval) → list Eval → Eval
 def evals_map (es : list Eval) (f : list V → Eval) : Eval :=
   evals_map' [] f es
 
+lemma evals_map_x_or_t : 
+  ∀ {t  : T} (f : list V → Eval) (es : list Eval),
+    (∀e : Eval, ∃t : T, e ∈ es → e.is_x ∨ e.is_t t) →
+    (∀ (vs : list V) (h : es = vs.map Eval.ok), (f vs).is_x ∨ (f vs).is_t t) →
+    (evals_map es f).is_x ∨ (evals_map es f).is_t t :=
+begin
+  intros t f es,
+  intros no_type_err,
+  intros ok_f_no_type_err,
+  
+  induction es,
+
+  case nil {
+    simp only [evals_map, evals_map'],
+    apply ok_f_no_type_err list.nil,
+    simp only [list.map],
+  },
+
+  case cons : e es ih {
+    simp only [evals_map, evals_map'],
+    apply map_v_is_x_or_t,
+    apply exists.elim,
+    exact no_type_err e,
+    intro t_before,
+    simp,
+    intro e_ok,
+    /-exact e_ok,-/ sorry,
+
+    sorry,
+    sorry,
+  },
+end
+
 mutual def eval, evals (d : defs)
 with eval : conf → E → Eval
 | c (E.null) := Eval.ok (V.o Ref.null)
@@ -332,140 +365,144 @@ begin
   induction e,
   repeat { simp only [eval, wt, Eval.is_t, E.typ, V.typ, Eval.is_x, Eval.is_t, false_or, rfl] at *, },
 
-  case x : x { exact var_ok x, },
+  -- case x : x { exact var_ok x, },
 
-  case deref : o f ih {
-    apply map_v_is_x_or_t,
-    exact ih (and.elim_right h),
-    intros v v_ok,
-    rw v_ok at *,
-    cases v,
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_left] at *, exact ih h, },
-    cases v,
-    simp [eval],
-    by_cases c.fieldPerm (f, v) = 0,
-    simp [h, Eval.is_x, Eval.is_t],
-    rw ←ite_not,
-    simp at h,
-    simp [h, Eval.is_x, Eval.is_t, field_ok f v],
-    simp [eval, Eval.is_t, Eval.is_x],
-  },
+  -- case deref : o f ih {
+  --   apply map_v_is_x_or_t,
+  --   exact ih (and.elim_right h),
+  --   intros v v_ok,
+  --   rw v_ok at *,
+  --   cases v,
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_left] at *, exact ih h, },
+  --   cases v,
+  --   simp [eval],
+  --   by_cases c.fieldPerm (f, v) = 0,
+  --   simp [h, Eval.is_x, Eval.is_t],
+  --   rw ←ite_not,
+  --   simp at h,
+  --   simp [h, Eval.is_x, Eval.is_t, field_ok f v],
+  --   simp [eval, Eval.is_t, Eval.is_x],
+  -- },
 
-  case negate : z ih {
-    apply map_v_is_x_or_t,
-    exact ih h.elim_right,
-    intros v v_ok,
-    rw v_ok at *,
-    cases v,
-    repeat { simp [eval] at *, },
+  -- case negate : z ih {
+  --   apply map_v_is_x_or_t,
+  --   exact ih h.elim_right,
+  --   intros v v_ok,
+  --   rw v_ok at *,
+  --   cases v,
+  --   repeat { simp [eval] at *, },
 
-    repeat { simp [eval, Eval.is_x, Eval.is_t, h.elim_left, V.typ] at *, },
-    repeat {  exact ih h, },
-  },
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, h.elim_left, V.typ] at *, },
+  --   repeat {  exact ih h, },
+  -- },
 
-  case add : z z' ih ih' {
-    apply map_v_is_x_or_t,
-    exact ih h.elim_right.elim_right.elim_left,
-    intros v v_ok,
-    rw v_ok at *,
-    apply map_v_is_x_or_t,
-    exact ih' h.elim_right.elim_right.elim_right,
-    intros v' v_ok',
-    rw v_ok' at *,
-    by_cases is_t_z : (z.typ d) = T.Z,
+  -- case add : z z' ih ih' {
+  --   apply map_v_is_x_or_t,
+  --   exact ih h.elim_right.elim_right.elim_left,
+  --   intros v v_ok,
+  --   rw v_ok at *,
+  --   apply map_v_is_x_or_t,
+  --   exact ih' h.elim_right.elim_right.elim_right,
+  --   intros v' v_ok',
+  --   rw v_ok' at *,
+  --   by_cases is_t_z : (z.typ d) = T.Z,
 
-    cases v,
-    repeat { simp [is_t_z] at *, },
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ] at ih, apply false.elim, exact ih h.elim_right.elim_left, },
-    cases v',
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right, },
+  --   cases v,
+  --   repeat { simp [is_t_z] at *, },
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ] at ih, apply false.elim, exact ih h.elim_right.elim_left, },
+  --   cases v',
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right, },
 
-    simp [eval, Eval.is_t, Eval.is_x, V.typ],
+  --   simp [eval, Eval.is_t, Eval.is_x, V.typ],
 
-    cases v,
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left] at ih, apply false.elim, exact ih h.elim_right.elim_right.elim_left, },
-    cases v',
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right.elim_right, },
+  --   cases v,
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left] at ih, apply false.elim, exact ih h.elim_right.elim_right.elim_left, },
+  --   cases v',
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right.elim_right, },
     
-    simp [eval, Eval.is_t, Eval.is_x, V.typ, h.elim_right.elim_left],
-  },
+  --   simp [eval, Eval.is_t, Eval.is_x, V.typ, h.elim_right.elim_left],
+  -- },
 
-  case div : z z' ih ih' {
-    apply map_v_is_x_or_t,
-    exact ih h.elim_right.elim_right.elim_left,
-    intros v v_ok,
-    rw v_ok at *,
-    apply map_v_is_x_or_t,
-    exact ih' h.elim_right.elim_right.elim_right,
-    intros v' v_ok',
-    rw v_ok' at *,
-    by_cases is_t_z : (z.typ d) = T.Z,
+  -- case div : z z' ih ih' {
+  --   apply map_v_is_x_or_t,
+  --   exact ih h.elim_right.elim_right.elim_left,
+  --   intros v v_ok,
+  --   rw v_ok at *,
+  --   apply map_v_is_x_or_t,
+  --   exact ih' h.elim_right.elim_right.elim_right,
+  --   intros v' v_ok',
+  --   rw v_ok' at *,
+  --   by_cases is_t_z : (z.typ d) = T.Z,
 
-    cases v,
-    repeat { simp [is_t_z] at *, },
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ] at ih, apply false.elim, exact ih h.elim_right.elim_left, },
-    cases v',
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right, },
+  --   cases v,
+  --   repeat { simp [is_t_z] at *, },
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ] at ih, apply false.elim, exact ih h.elim_right.elim_left, },
+  --   cases v',
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right, },
 
-    rw eval,
-    by_cases div_zero : v' = 0,
-    simp [div_zero, Eval.is_x],
-    rw ←ite_not,
-    simp [div_zero, Eval.is_t, V.typ],
+  --   rw eval,
+  --   by_cases div_zero : v' = 0,
+  --   simp [div_zero, Eval.is_x],
+  --   rw ←ite_not,
+  --   simp [div_zero, Eval.is_t, V.typ],
 
-    cases v,
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left] at ih, apply false.elim, exact ih h.elim_right.elim_right.elim_left, },
-    cases v',
-    repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left, h.elim_right.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right.elim_right, },
+  --   cases v,
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, h.elim_right.elim_left] at ih, apply false.elim, exact ih h.elim_right.elim_right.elim_left, },
+  --   cases v',
+  --   repeat { simp [eval, Eval.is_x, Eval.is_t, V.typ, ←h.elim_left, h.elim_right.elim_left] at ih', apply false.elim, exact ih' h.elim_right.elim_right.elim_right, },
 
-    rw eval,
-    by_cases div_zero : v' = 0,
-    simp [div_zero, Eval.is_x],
-    rw ←ite_not,
-    simp [div_zero, Eval.is_t, V.typ, h.elim_right.elim_left],
-  },
+  --   rw eval,
+  --   by_cases div_zero : v' = 0,
+  --   simp [div_zero, Eval.is_x],
+  --   rw ←ite_not,
+  --   simp [div_zero, Eval.is_t, V.typ, h.elim_right.elim_left],
+  -- },
 
-  case not : b ih {
-    apply map_v_is_x_or_t,
-    exact ih h.elim_right,
-    intros v v_ok,
-    rw v_ok at *,
-    cases v,
-    repeat { simp only [eval, Eval.is_x, Eval.is_t, V.typ, false_or], },
-    repeat { simp only [h.elim_left, Eval.is_x, Eval.is_t, V.typ, false_or] at ih, },
-    repeat { exact ih h.elim_right },
-  },
+  -- case not : b ih {
+  --   apply map_v_is_x_or_t,
+  --   exact ih h.elim_right,
+  --   intros v v_ok,
+  --   rw v_ok at *,
+  --   cases v,
+  --   repeat { simp only [eval, Eval.is_x, Eval.is_t, V.typ, false_or], },
+  --   repeat { simp only [h.elim_left, Eval.is_x, Eval.is_t, V.typ, false_or] at ih, },
+  --   repeat { exact ih h.elim_right },
+  -- },
 
-  case eq : l r ih ih' {
-    have t_eq : l.typ d = r.typ d, from h.elim_left,
-    have wt_l : wt d l, from h.elim_right.elim_left,
-    have wt_r : wt d r, from h.elim_right.elim_right,
-    clear h,
+  -- case eq : l r ih ih' {
+  --   have t_eq : l.typ d = r.typ d, from h.elim_left,
+  --   have wt_l : wt d l, from h.elim_right.elim_left,
+  --   have wt_r : wt d r, from h.elim_right.elim_right,
+  --   clear h,
 
-    apply map_v_is_x_or_t,
-    exact ih wt_l,
-    intros v v_ok,
-    apply map_v_is_x_or_t,
-    exact ih' wt_r,
-    intros v' v_ok',
-    rw v_ok at *, rw v_ok' at *,
+  --   apply map_v_is_x_or_t,
+  --   exact ih wt_l,
+  --   intros v v_ok,
+  --   apply map_v_is_x_or_t,
+  --   exact ih' wt_r,
+  --   intros v' v_ok',
+  --   rw v_ok at *, rw v_ok' at *,
     
-    cases v,
-    repeat {
-      cases v',
-      repeat {
-        simp only [eval],
-        simp only [Eval.is_t, V.typ], 
-        apply or.intro_right, 
-        refl,
-      },
-      repeat {
-        simp only [eval], simp only [Eval.is_t, Eval.is_x, V.typ, or_false],
-        simp only [Eval.is_x, Eval.is_t, V.typ, false_or] at ih,
-        simp only [Eval.is_x, Eval.is_t, V.typ, false_or, ←t_eq, ←ih wt_l] at ih',
-        exact ih' wt_r,
-      },
-    },
+  --   cases v,
+  --   repeat {
+  --     cases v',
+  --     repeat {
+  --       simp only [eval],
+  --       simp only [Eval.is_t, V.typ], 
+  --       apply or.intro_right, 
+  --       refl,
+  --     },
+  --     repeat {
+  --       simp only [eval], simp only [Eval.is_t, Eval.is_x, V.typ, or_false],
+  --       simp only [Eval.is_x, Eval.is_t, V.typ, false_or] at ih,
+  --       simp only [Eval.is_x, Eval.is_t, V.typ, false_or, ←t_eq, ←ih wt_l] at ih',
+  --       exact ih' wt_r,
+  --     },
+  --   },
+  -- },
+
+  case apply : f args {
+    apply map_v_is_x_or_t,
   },
 
   repeat { sorry, },
