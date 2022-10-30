@@ -1,8 +1,8 @@
 [package]
 name = "vercors"
 version = "1.0"
-lean_version = "leanprover-community/lean:3.33.0"
+lean_version = "leanprover-community/lean:3.48.0"
 path = "."
 
 [dependencies]
-mathlib = {git = "https://github.com/leanprover-community/mathlib", rev = "e0f7d0e87e8d9a81edd79fec5594aedecd037aaa"}
+mathlib = {git = "https://github.com/leanprover-community/mathlib", rev = "f333194f5ecd1482191452c5ea60b37d4d6afa08"}
